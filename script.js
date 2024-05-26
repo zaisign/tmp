@@ -146,9 +146,16 @@ async function predictWebcam() {
     
     if (results.faceLandmarks.length > 0){
       // 顔向き角度を求める
-
       const faceLandmarks = results.faceLandmarks[0];
-  
+      
+      // Find the minimum z value in all face landmarks
+      let minZ = faceLandmarks[0].z;
+      for (const landmark of faceLandmarks) {
+        if (landmark.z < minZ) {
+          minZ = landmark.z;
+        }
+      }
+
       const imgW = video.videoWidth;
       const imgH = video.videoHeight;
   
@@ -163,8 +170,8 @@ async function predictWebcam() {
         const x = lm.x * imgW;
         const y = lm.y * imgH;
         face2D.push([x, y]);
-        // face3D.push([x, y, lm.z * imgW]);
-        face3D.push([x, y, lm.z]);
+        face3D.push([x, y, (lm.z - minZ) ] );
+        // face3D.push([x, y, lm.z]);
   
         if (idx === 1) {
           nose2D = [x, y];
@@ -180,7 +187,8 @@ async function predictWebcam() {
       const face2DArray = cv.matFromArray(face2D.length, 2, cv.CV_64F, face2D.flat());
       const face3DArray = cv.matFromArray(face3D.length, 3, cv.CV_64F, face3D.flat());
   
-      const focalLength = imgW;
+      const focalLength = imgW * 50/44
+      
       const camMatrix = cv.matFromArray(3, 3, cv.CV_64F, [
         focalLength, 0, imgH / 2,
         0, focalLength, imgW / 2,
@@ -195,7 +203,9 @@ async function predictWebcam() {
   
       const rmat = new cv.Mat();
       cv.Rodrigues(rotVec, rmat);
+      // console.log("rmat: ", rmat.data64F)
   
+
       // Convert rotation matrix to Euler angles
       const sy = Math.sqrt(rmat.data64F[0] * rmat.data64F[0] + rmat.data64F[3] * rmat.data64F[3]);
       const singular = sy < 1e-6;
@@ -234,7 +244,7 @@ async function predictWebcam() {
 
       // Output head pose angles in degrees
       const poseInfoElement = document.getElementById('pose_info');
-      poseInfoElement.innerText = `Head pose angles - x: ${xDegrees.toFixed(5)}°, y: ${yDegrees.toFixed(5)}°, z: ${zDegrees.toFixed(5)}°`;
+      poseInfoElement.innerText = `Head pose angles - x: ${xDegrees.toFixed(3)}°, y: ${yDegrees.toFixed(3)}°, z: ${zDegrees.toFixed(3)}°`;
 
 
       face2DArray.delete();
@@ -247,38 +257,38 @@ async function predictWebcam() {
   
   
       // Calculate the distance between eyes
-      const leftEye = faceLandmarks[33];
-      const rightEye = faceLandmarks[263];
+      const leftEye = faceLandmarks[263];
+      const rightEye = faceLandmarks[33];
       const dx = (rightEye.x - leftEye.x) * imgW;
       const dy = (rightEye.y - leftEye.y) * imgH;
-      const eyeDistancePixels = Math.sqrt(dx * dx + dy * dy);
-  
+      const dz = (rightEye.z - leftEye.z) * imgW; // Scale dz by imgW to match the scale of x and y
+      const eyeDistancePixels = Math.sqrt(dx * dx + dy * dy + dz * dz); // 3D Euclidean distance
+
       // Known average interpupillary distance (IPD) in mm
       const ipd = 63; // in mm
-  
+
       // Calculate distance from camera to face
       const focalLengthMM = focalLength; // assuming focal length in mm matches the focal length in pixels
       const distanceToCamera = (ipd * focalLengthMM) / eyeDistancePixels; // distance in mm
-  
-      // console.log(`Distance to camera: ${(distanceToCamera / 10).toFixed(2)} cm`);
-      document.getElementById("eye_info").innerText = `Distance to camera: ${(distanceToCamera / 10).toFixed(2)} cm`
 
+      // Output the result
+      document.getElementById("eye_info").innerText = `Distance to camera: ${(distanceToCamera / 10).toFixed(2)} cm`;
 
+      // Draw face facing line and intersection with screen
 
-          // Draw face facing line and intersection with screen
-      const dist = distanceToCamera *1000;
-      const args = { ratio: 1.0 }; // Adjust as needed
-      const o_rx = 0, o_ry = 0, r_rx = 1, r_ry = 1; // Adjust as needed
-      const d_eopy = dist * Math.tan((x + o_rx) * (Math.PI / 180)) * args.ratio * r_rx;
-      const d_eopx = dist * Math.tan((y + o_ry) * (Math.PI / 180)) * args.ratio * r_ry;
-      const p3 = [Math.round(nose2D[0] + d_eopx), Math.round(nose2D[1] - d_eopy)];
-      const p1 = [Math.round(nose2D[0]), Math.round(nose2D[1])];
+      const dist = distanceToCamera *19;  // 640 px / 18cm
+      const o_rx = -1, o_ry = 0, r_rx = 1, r_ry = 1; // Adjust as needed
+      const d_eopy = dist * Math.tan((xDegrees + o_rx)*Math.PI/180)  * r_rx;
+      const d_eopx = dist * Math.tan((yDegrees + o_ry)*Math.PI/180)  * r_ry;
+
+      const pScreenIntersect = [Math.round(nose2D[0] + d_eopx), Math.round(nose2D[1] - d_eopy)];
+      const pNose = [Math.round(nose2D[0]), Math.round(nose2D[1])];
 
       // Drawing the line
-      drawingUtils.drawLine(p1, p3, { color: 'rgba(9, 255, 0, 1)', lineWidth: 3 });
+      drawingUtils.drawLine(pNose, pScreenIntersect, { color: 'rgba(9, 255, 0, 1)', lineWidth: 3 });
 
       // Drawing the circle at the intersection point
-      drawingUtils.drawCircle(p3, { color: 'rgba(255, 255, 0, 1)', radius: 40 });
+      drawingUtils.drawCircle(pScreenIntersect, { color: 'rgba(255, 255, 0, 1)', radius: 40 });
 
       // Drawing the nose point
       const nosePoint = faceLandmarks[1];
@@ -288,9 +298,15 @@ async function predictWebcam() {
 
       const drawInfoElement = document.getElementById('draw_info');
       drawInfoElement.innerHTML = `
+        ImgShape: ${imgW} x ${imgH}<br>
+        minZ: ${minZ.toFixed(3)}<br>
+        LeftRightEyeContourLM: <br>
+        　　${leftEye.x.toFixed(3)},${leftEye.y.toFixed(3)},${leftEye.z.toFixed(3)}<br>
+        　　${rightEye.x.toFixed(3)},${rightEye.y.toFixed(3)},${rightEye.z.toFixed(3)} 
+        <br>
         Nose Point: [${npX}, ${npY}]<br>
-        P1: [${p1[0]}, ${p1[1]}]<br>
-        P3: [${p3[0]}, ${p3[1]}]
+        P1: [${pNose[0]}, ${pNose[1]}]<br>
+        P3: [${pScreenIntersect[0]}, ${pScreenIntersect[1]}]
       `;
 
     }
