@@ -95,34 +95,25 @@ let lastVideoTime = -1;
 let results = undefined;
 const drawingUtils = new ExtendedDrawingUtils(canvasCtx);
 
-
 async function predictWebcam() {
-  // const radio = video.videoHeight / video.videoWidth;
-  // video.style.width = videoWidth + "px";
-  // video.style.height = videoWidth * radio + "px";
-  // canvasElement.style.width = videoWidth + "px";
-  // canvasElement.style.height = videoWidth * radio + "px";
-  // canvasElement.width = video.videoWidth;
-  // canvasElement.height = video.videoHeight;
- // Calculate the aspect ratio
-  // Calculate the aspect ratio
-  const aspectRatio = video.videoWidth / video.videoHeight;
+  // 動画のアスペクト比を計算
+  const aspectRatio = video.videoWidth / video.videoHeight; 
 
-  // Get the width of the screen
+  // 画面の幅を取得
   const screenWidth = window.innerWidth;
 
-  // Calculate the height of the canvas based on the aspect ratio and screen width
+  // アスペクト比と画面の幅に基づいてcanvasの高さを計算
   const canvasHeight = screenWidth / aspectRatio;
 
-  // Set the width of the video to fill the screen
+  // 動画の幅を画面全体に設定
   video.style.width = screenWidth + "px";
   video.style.height = canvasHeight + "px";
 
-  // Set the width of the canvas to fill the screen
+  // canvasの幅を画面全体に設定
   canvasElement.style.width = screenWidth + "px";
   canvasElement.style.height = canvasHeight + "px";
 
-  // Set the canvas position to top-left corner
+  // canvasの位置を左上に設定
   canvasElement.style.position = "absolute";
   canvasElement.style.top = "0";
   canvasElement.style.left = "0";
@@ -130,25 +121,24 @@ async function predictWebcam() {
   canvasElement.width = video.videoWidth;
   canvasElement.height = video.videoHeight;
 
-
-
+  // 動作モードが「画像」なら「ビデオ」に変更
   if (runningMode === "IMAGE") {
     runningMode = "VIDEO";
     await faceLandmarker.setOptions({ runningMode: runningMode });
   }
-  let startTimeMs = performance.now();
+  let startTimeMs = performance.now(); // 処理の開始時間を記録
   if (lastVideoTime !== video.currentTime) {
     lastVideoTime = video.currentTime;
-    results = faceLandmarker.detectForVideo(video, startTimeMs);
+    results = faceLandmarker.detectForVideo(video, startTimeMs); // ビデオから顔を検出
   }
-  let lastAngles = null
+  let lastAngles = null;
   if (results.faceLandmarks) {
     
-    if (results.faceLandmarks.length > 0){
+    if (results.faceLandmarks.length > 0) {
       // 顔向き角度を求める
       const faceLandmarks = results.faceLandmarks[0];
       
-      // Find the minimum z value in all face landmarks
+      // 全ての顔Landmarkから最小の z 値を見つける
       let minZ = faceLandmarks[0].z;
       for (const landmark of faceLandmarks) {
         if (landmark.z < minZ) {
@@ -170,9 +160,9 @@ async function predictWebcam() {
         const x = lm.x * imgW;
         const y = lm.y * imgH;
         face2D.push([x, y]);
-        face3D.push([x, y, (lm.z - minZ) ] );
+        face3D.push([x, y, (lm.z - minZ)]); // z 値を基準化
         // face3D.push([x, y, lm.z]);
-  
+
         if (idx === 1) {
           nose2D = [x, y];
           nose3D = [x, y, lm.z * imgW];
@@ -180,14 +170,14 @@ async function predictWebcam() {
       });
   
       if (face2D.length !== 6 || face3D.length !== 6) {
-        console.error('Failed to get the required face landmarks.');
+        console.error('必要な顔のLandmarkを取得できませんでした。');
         return;
       }
   
       const face2DArray = cv.matFromArray(face2D.length, 2, cv.CV_64F, face2D.flat());
       const face3DArray = cv.matFromArray(face3D.length, 3, cv.CV_64F, face3D.flat());
   
-      const focalLength = imgW * 50/44
+      const focalLength = imgW * 50 / 44;
       
       const camMatrix = cv.matFromArray(3, 3, cv.CV_64F, [
         focalLength, 0, imgH / 2,
@@ -203,10 +193,9 @@ async function predictWebcam() {
   
       const rmat = new cv.Mat();
       cv.Rodrigues(rotVec, rmat);
-      // console.log("rmat: ", rmat.data64F)
+      // console.log("rmat: ", rmat.data64F);
   
-
-      // Convert rotation matrix to Euler angles
+      // 回転行列をオイラー角に変換
       const sy = Math.sqrt(rmat.data64F[0] * rmat.data64F[0] + rmat.data64F[3] * rmat.data64F[3]);
       const singular = sy < 1e-6;
   
@@ -225,7 +214,9 @@ async function predictWebcam() {
       y = y * (180 / Math.PI);
       z = z * (180 / Math.PI);
   
-      // Apply smoothing to angles
+      // 角度に平滑化（スムージング）を適用
+      // ここは、指数移動平均（Exponential Moving Average, EMA）を使用
+      // 新しい平滑化後の値 = 前回の平滑化後の値 * 平滑化係数 + 新しい値 * (1 - 平滑化係数)
       const smoothingFactor = 0.9;
       if (lastAngles) {
         x = lastAngles.x * smoothingFactor + x * (1 - smoothingFactor);
@@ -234,19 +225,17 @@ async function predictWebcam() {
       }
       lastAngles = { x, y, z };
   
-      // console.log(`Head pose angles - x: ${x.toFixed(5)}, y: ${y.toFixed(5)}, z: ${z.toFixed(5)}`);
-      // document.getElementById("pose_info").innerText = `Head pose angles - x: ${x.toFixed(5)}, y: ${y.toFixed(5)}, z: ${z.toFixed(5)}`
         
-      // Convert angles from radians to degrees
+      // 角度をラジアンから度に変換
       const xDegrees = x * (180 / Math.PI);
       const yDegrees = y * (180 / Math.PI);
       const zDegrees = z * (180 / Math.PI);
 
-      // Output head pose angles in degrees
+      // 度単位で頭の向き角度を出力
       const poseInfoElement = document.getElementById('pose_info');
-      poseInfoElement.innerText = `Head pose angles - x: ${xDegrees.toFixed(3)}°, y: ${yDegrees.toFixed(3)}°, z: ${zDegrees.toFixed(3)}°`;
+      poseInfoElement.innerText = `頭の向き推定角度 - x: ${xDegrees.toFixed(3)}°, y: ${yDegrees.toFixed(3)}°, z: ${zDegrees.toFixed(3)}°`;
 
-
+      // メモリの解放
       face2DArray.delete();
       face3DArray.delete();
       camMatrix.delete();
@@ -255,42 +244,43 @@ async function predictWebcam() {
       transVec.delete();
       rmat.delete();
   
-  
-      // Calculate the distance between eyes
+      // 目の間の距離を計算
       const leftEye = faceLandmarks[263];
       const rightEye = faceLandmarks[33];
       const dx = (rightEye.x - leftEye.x) * imgW;
       const dy = (rightEye.y - leftEye.y) * imgH;
-      const dz = (rightEye.z - leftEye.z) * imgW; // Scale dz by imgW to match the scale of x and y
-      const eyeDistancePixels = Math.sqrt(dx * dx + dy * dy + dz * dz); // 3D Euclidean distance
+      const dz = (rightEye.z - leftEye.z) * imgW; // z 値を imgW でスケーリング
+      const eyeDistancePixels = Math.sqrt(dx * dx + dy * dy + dz * dz); // 3D ユークリッド距離
 
-      // Known average interpupillary distance (IPD) in mm
-      const ipd = 63; // in mm
+      // 平均瞳孔間距離 (IPD) を mm 単位で設定
+      const ipd = 63; // mm 単位
 
-      // Calculate distance from camera to face
-      const focalLengthMM = focalLength; // assuming focal length in mm matches the focal length in pixels
-      const distanceToCamera = (ipd * focalLengthMM) / eyeDistancePixels; // distance in mm
+      // カメラから顔までの距離を計算
+      const focalLengthMM = focalLength; // mm 単位の焦点距離がピクセルの焦点距離と一致すると仮定
+      const distanceToCamera = (ipd * focalLengthMM) / eyeDistancePixels; // mm 単位の距離
 
-      // Output the result
-      document.getElementById("eye_info").innerText = `Distance to camera: ${(distanceToCamera / 10).toFixed(2)} cm`;
+      // 結果を出力
+      document.getElementById("eye_info").innerText = `カメラまでの推定距離: ${(distanceToCamera / 10).toFixed(2)} cm`;
 
-      // Draw face facing line and intersection with screen
-
-      const dist = distanceToCamera *19;  // 640 px / 18cm
-      const o_rx = -1, o_ry = 0, r_rx = 1, r_ry = 1; // Adjust as needed
-      const d_eopy = dist * Math.tan((xDegrees + o_rx)*Math.PI/180)  * r_rx;
-      const d_eopx = dist * Math.tan((yDegrees + o_ry)*Math.PI/180)  * r_ry;
+      // 顔の向きを示す線と画面との交点を描画：
+      
+      // 顔向きと画面の交差点の計算：
+      const dist = distanceToCamera * 19; // 640 px / 18cm
+      const o_rx = -1, o_ry = 0, r_rx = 1, r_ry = 1; // 必要に応じて調整
+      const d_eopy = dist * Math.tan((xDegrees + o_rx) * Math.PI / 180) * r_rx;
+      const d_eopx = dist * Math.tan((yDegrees + o_ry) * Math.PI / 180) * r_ry;
 
       const pScreenIntersect = [Math.round(nose2D[0] + d_eopx), Math.round(nose2D[1] - d_eopy)];
       const pNose = [Math.round(nose2D[0]), Math.round(nose2D[1])];
 
-      // Drawing the line
+      // 線を描画
       drawingUtils.drawLine(pNose, pScreenIntersect, { color: 'rgba(9, 255, 0, 1)', lineWidth: 3 });
 
-      // Drawing the circle at the intersection point
-      drawingUtils.drawCircle(pScreenIntersect, { color: 'rgba(255, 255, 0, 1)', radius: 40 });
+      // 交点に円を描画
+      const radius = Math.round(40 * distanceToCamera / 500); // カメラまでの距離に応じて円のサイズを比例関係で調整。
+      drawingUtils.drawCircle(pScreenIntersect, { color: 'rgba(255, 255, 0, 1)', radius: radius });
 
-      // Drawing the nose point
+      // 鼻の位置に円を描画
       const nosePoint = faceLandmarks[1];
       const npX = Math.round(nosePoint.x * imgW);
       const npY = Math.round(nosePoint.y * imgH);
@@ -298,21 +288,19 @@ async function predictWebcam() {
 
       const drawInfoElement = document.getElementById('draw_info');
       drawInfoElement.innerHTML = `
-        ImgShape: ${imgW} x ${imgH}<br>
-        minZ: ${minZ.toFixed(3)}<br>
-        LeftRightEyeContourLM: <br>
+        画像サイズ: ${imgW} x ${imgH}<br>
+        最小Z値: ${minZ.toFixed(3)}<br>
+        左右目のLandmark: <br>
         　　${leftEye.x.toFixed(3)},${leftEye.y.toFixed(3)},${leftEye.z.toFixed(3)}<br>
         　　${rightEye.x.toFixed(3)},${rightEye.y.toFixed(3)},${rightEye.z.toFixed(3)} 
         <br>
-        Nose Point: [${npX}, ${npY}]<br>
+        鼻の位置: [${npX}, ${npY}]<br>
         P1: [${pNose[0]}, ${pNose[1]}]<br>
         P3: [${pScreenIntersect[0]}, ${pScreenIntersect[1]}]
       `;
-
     }
 
-
-
+    // 顔のLandmarkを描画
     for (const landmarks of results.faceLandmarks) {
       drawingUtils.drawConnectors(
         landmarks,
@@ -364,7 +352,7 @@ async function predictWebcam() {
   drawBlendShapes(videoBlendShapes, results.faceBlendshapes);
 
   if (webcamRunning === true) {
-    window.requestAnimationFrame(predictWebcam);
+    window.requestAnimationFrame(predictWebcam); // 次のフレームで再度実行
   }
 }
 
