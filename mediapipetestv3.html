@@ -30,6 +30,8 @@ limitations under the License. -->
 
 
 
+
+
 </head>
 <body>
   <h1>Estimation of Line of Sight and Screen Intersect Point using MediaPipe Facelandmarks Demo</h1>
@@ -38,7 +40,9 @@ limitations under the License. -->
     <button id="webcamButton" class="mdc-button mdc-button--raised">
       <span class="mdc-button__ripple"></span>
       <span class="mdc-button__label">ENABLE WEBCAM</span>
-    </button>
+    </button><br>
+    <label for="focalLength">焦点距離係数</label>
+    <input type="number" min="500" max="5000" value="727" id="focalLength">
     <div style="color: black;">
       <p id="pose_info"></p>
       <p id="eye_info"></p>
