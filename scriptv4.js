@@ -2,7 +2,7 @@
 var { pdfjsLib } = globalThis;
 
 // workerSrc を指定
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/build/pdf.worker.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs/build/pdf.worker.mjs';
 
 let pdfDoc = null;
 var currentPageLeft = 1;
