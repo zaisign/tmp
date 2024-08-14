@@ -55,7 +55,8 @@ function showPage(leftRight, pageNo) {
     pdfDoc.getPage(pageNo).then(function (page) {
         console.log('Page loaded: ' + pageNo);
 
-        var scale = 1.35 * resolutionMultiplier;
+        var scale = parseInt(document.getElementById("page_scale").value) / 100.0 
+        scale *= resolutionMultiplier
         var viewport = page.getViewport({ scale: scale });
 
         // var viewport = page.getViewport();
