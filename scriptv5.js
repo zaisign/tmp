@@ -115,13 +115,13 @@ function nextPage(){
   let maxPage = pdfDoc.numPages
 
   currentPageLeft += 1;
-  currentPageLeft = min(maxPage, currentPageLeft)
+  currentPageLeft = Math.min(maxPage, currentPageLeft)
   showPage(0, currentPageLeft); 
 }
 
 function prevPage(){
   currentPageLeft -= 1;
-  currentPageLeft = max(1, currentPageLeft)
+  currentPageLeft = Math.max(1, currentPageLeft)
   showPage(0, currentPageLeft); 
 }
 
