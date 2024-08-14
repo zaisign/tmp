@@ -45,11 +45,7 @@ document.getElementById('file-input').addEventListener('change', function (event
     }
 });
 
-$(function(){
-  $("#toggle_debug_info").on("click", function(){
-    $("#debug_info").toggle()
-  })
-})
+
 
 function showPage(leftRight, pageNo) {
     if (!pdfDoc) {
@@ -96,64 +92,37 @@ function showPage(leftRight, pageNo) {
 
 
 
+$(function(){
+  $("#toggle_debug_info").on("click", function(){
+    $("#debug_info").toggle()
+  })
+  $("#debug_info").toggle()
+
+  $("#next_page").on("click", function(){
+    nextPage()
+  })
+  $("#prev_page").on("click", function(){
+    prevPage()
+  })
+})
 
 
 
-
-
-
-
-// const detectWindow_Y = [ 1, 1, 1, 1, 0, 0, 0, 0];
-// const detectWindow_X = [ 0, 0, 0, 0, 1, 1, 1, 1];
-// const eye_y = [];
-// const eye_x = [];
-
-// function sumArray(arr) {
-//   let sum = 0;
-//   for (let i = 0; i < arr.length; i++) {
-//       sum += arr[i];
-//   }
-//   return sum;
-// }
-
-// function detectNextPage(){
-//   if(eye_x.length >= detectWindow_Y.length){
-//     let eye_detect_y = [];
-//     let eye_detect_x = [];
-//     for( let i = 0; i < detectWindow_Y.length; i++ ){
-//       let diff_y = detectWindow_Y[i] - eye_y.at( i - detectWindow_Y.length );
-//       let diff_x = detectWindow_X[i] + eye_x.at( i - detectWindow_X.length );
-//       eye_detect_y.push(Math.abs(diff_y));
-//       eye_detect_x.push(Math.abs(diff_x));
-
-//     }
-//     let sumY = sumArray(eye_detect_y);
-//     let sumX = sumArray(eye_detect_x);
-//     console.log("sumY , sumX: ", eye_y.at(-1).toFixed(2), ", ",  eye_x.at(-1).toFixed(2), ",   ",  sumY.toFixed(2), ", ", sumX.toFixed(2))
-//   }
-// }
-
-// function push( x, y ){
-//   y = Math.max(0, y)
-//   y = Math.min(1, y)
-//   x = Math.max(0, x)
-//   x = Math.min(1, x)
-
-//   eye_y.push(y);
-//   eye_x.push(x);
-//   if(eye_x.length > 1000){
-//     eye_x.shift();
-//     eye_y.shift();
-//   }
-// }
 
 let canNextPage = false;
 
 function nextPage(){
+  let maxPage = pdfDoc.numPages
+
   currentPageLeft += 1;
-  // currentPageRight += 2;
+  currentPageLeft = min(maxPage, currentPageLeft)
   showPage(0, currentPageLeft); 
-  // showPage(1, currentPageRight); 
+}
+
+function prevPage(){
+  currentPageLeft -= 1;
+  currentPageLeft = max(1, currentPageLeft)
+  showPage(0, currentPageLeft); 
 }
 
 function resetCanNextPage(){
