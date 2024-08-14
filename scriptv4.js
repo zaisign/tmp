@@ -108,6 +108,11 @@ $(function(){
   $("#prev_page").on("click", function(){
     prevPage()
   })
+
+  $("#page_scale").on("change", function(){
+    showPage(0, currentPageLeft)
+    showPage(1, currentPageRight)
+  })
 })
 
 
