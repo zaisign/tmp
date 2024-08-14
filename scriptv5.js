@@ -564,8 +564,8 @@ async function predictWebcam() {
   
       
 
-      // if (n > 0.7 && m < 0.3){
-      if ( m < 0.44 ){
+      if (n > 0.5 && m < 0.4){
+      // if ( m < 0.44 ){
         if(! canNextPage){
           console.log("n, m: ", n.toFixed(2), ", ",  m.toFixed(2), ", ", ! canNextPage)
         }
@@ -573,8 +573,8 @@ async function predictWebcam() {
         // console.log("true", n, ", ",  m)
       }
 
-      // if (n < 0.3 && m > 0.7){
-      if ( m > 0.56 ){
+      if (n < 0.4 && m > 0.6){
+      // if ( m > 0.56 ){
         if(canNextPage){
           nextPage();
           canNextPage = false;
