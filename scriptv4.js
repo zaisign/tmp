@@ -125,8 +125,13 @@ function nextPage(){
   }else if(currentPageLeft > maxPage){
     currentPageLeft -= 2;
     currentPageRight -= 2;
-    showPage(0, currentPageLeft); 
-    showPage(1, currentPageRight); 
+    if(currentPageLeft == maxPage){
+      rightContext.clearRect(0, 0, rightCanvas.width, rightCanvas.height);
+      showPage(0, currentPageLeft); 
+    }else{
+      showPage(0, currentPageLeft); 
+      showPage(1, currentPageRight); 
+    }
   }else{
     showPage(0, currentPageLeft); 
     showPage(1, currentPageRight); 

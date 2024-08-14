@@ -168,10 +168,8 @@ body, html {
 }
 #left-canvas {
   left: 0;
-  background-color: lightblue; /* Optional: for visualization */
 }
 #right-canvas {
   right: 0;
-  background-color: lightgreen; /* Optional: for visualization */
   display: none;
 }
