@@ -94,6 +94,9 @@ function showPage(leftRight, pageNo) {
 
 
 
+var is_control_eye = true;
+
+
 $(function(){
   $("#toggle_debug_info").on("click", function(){
     $("#debug_info").toggle()
@@ -103,12 +106,20 @@ $(function(){
   $("#next_page").on("click", function(){
     nextPage()
   })
+
   $("#prev_page").on("click", function(){
     prevPage()
   })
+
   $("#page_scale").on("change", function(){
     showPage(0, currentPageLeft)
   })
+
+  $("#control_face_eye").on("click", function(){    
+    is_control_eye = !is_control_eye;
+    document.getElementById("control_face_eye").textContent = is_control_eye ? "視線制御" : "顔制御";
+  })
+
 })
 
 
@@ -528,8 +539,16 @@ async function predictWebcam() {
 
       
 
-      let n = pEyeScreenIntersect[1] / 480
-      let m = pEyeScreenIntersect[0] / 640
+       
+      if(is_control_eye){
+        var point = pEyeScreenIntersect;
+
+      }else{
+        var point = pScreenIntersect;
+      }
+
+      let n = point[1] / 480
+      let m = point[0] / 640
 
       if(n > 1) n = 1
       if(n < 0) n = 0
@@ -562,9 +581,6 @@ async function predictWebcam() {
           console.log("n, m: ", n.toFixed(2), ", ",  m.toFixed(2), ", ", canNextPage)
         }
       }
-
-
-
 
 
 
