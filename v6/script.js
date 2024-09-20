@@ -1,12 +1,250 @@
 // PDF.js ライブラリを取得
 var { pdfjsLib } = globalThis;
 
-// workerSrc を指定
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs/build/pdf.worker.mjs';
+// PDFのworkerSrc を指定
+pdfjsLib.GlobalWorkerOptions.workerSrc = '../pdfjs/build/pdf.worker.mjs';
 
-let pdfDoc = null;
-var currentPageLeft = 1;
+let pdfDoc = null;        // PDFオブジェクト
+var currentPageLeft = 1;  // 左canvasのページ数の保管
 var currentPageRight = 2;
+
+// 顔角度((xとy)Degrees + o_rx))の時系列リスト[ degress0, [...]]
+var Degress_face_x = []
+var Degress_face_y = []
+
+// 視線角度((xとy)Degrees + o_rx + eye_o_rx + gazeUpRad))の時系列リスト[ degress0, [...]]
+var Degress_eye_x = []
+var Degress_eye_y = []
+
+// 時系列の横軸のデータ
+var Degress_time = []
+
+// 前回自動ページめくった時刻[ms]
+var LastAutoNextPageCallTime = 0
+
+var pEyeScreenIntersect  // 視線と画面の交点の座標[px]　のグローバル保管
+var EyeCalibVal = [0, 0] // 視線校正データ
+
+$(function(){
+  // 中央の校正ボタンの処理
+  $("#center_point").on('click', function(){
+    const imgW = video.videoWidth
+
+    const centerX = imgW/2
+
+    const viewPortRatio = window.innerWidth / window.innerHeight
+    const centerY = imgW / viewPortRatio / 2
+    EyeCalibVal = [
+      centerX - (pEyeScreenIntersect[0] - EyeCalibVal[0]) ,
+      centerY - (pEyeScreenIntersect[1] - EyeCalibVal[1]) 
+    ]
+    console.log("imgW = ", imgW, centerX, centerY, EyeCalibVal)
+  })
+})
+
+
+function getScreenWidthInCm() {
+  // Get the screen width in pixels
+  const screenWidthPx = window.screen.width;
+
+  // Approximate DPI (dots per inch). You might want to adjust this value for more accuracy.
+  const dpi = 96; // Common DPI for many screens, but this can vary widely.
+
+  // Convert screen width from pixels to inches (1 inch = 2.54 cm)
+  const screenWidthInInches = screenWidthPx / dpi;
+  const screenWidthInCm = screenWidthInInches * 2.54;
+
+  return screenWidthInCm;
+}
+
+// 結果をコンソールに表示
+console.log("ウィンドウの幅（cm）: " + getScreenWidthInCm());
+$(function (){
+  $("#width_cm").val(getScreenWidthInCm())
+})
+
+
+// 合計値を求める関数
+function sumArray(arr) {
+  return arr.reduce(function(acc, curr) {
+    return acc + curr;
+  }, 0);
+}
+
+// 平均値を求める関数
+function averageArray(arr) {
+  return sumArray(arr) / arr.length;
+}
+
+// 中央値を求める関数
+function medianArray(arr) {
+  const sorted = arr.slice().sort(function(a, b) {
+    return a - b;
+  });
+  const mid = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  } else {
+    return sorted[mid];
+  }
+}
+
+
+function AddToTimeSeries(dat){
+  // dat: Array:  [ eyeX:[time, deg],  ...  ]
+  Degress_face_x.push(dat[0])
+  Degress_face_y.push(dat[1])
+  Degress_eye_x.push(dat[2])
+  Degress_eye_y.push(dat[3])
+  
+  // Get current time in milliseconds
+  var time = Date.now();
+  Degress_time.push(time)
+
+  // 25秒前の時系列データを削除
+  while( time - Degress_time[0] >= 25000 ){
+    Degress_time.shift()
+    Degress_face_x.shift()
+    Degress_face_y.shift()
+    Degress_eye_x.shift()
+    Degress_eye_y.shift()
+  }
+}
+
+// canvasに描画する関数
+function drawTimeSeries(zoomY) {
+  var canvas = document.getElementById('timeSeriesCanvas');
+  var ctx = canvas.getContext('2d');
+
+  // キャンバスをクリア
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // データが少ない場合は描画しない
+  if (Degress_time.length === 0) return;
+
+  var timeWindow = 25000; // [ms]
+  var currentTime = Date.now();
+  var timeRange = Math.max(...Degress_time) - Math.min(...Degress_time);
+
+  // Yの目盛りを描画
+  function drawYLabels(zoomY) {
+    var canvas = document.getElementById('timeSeriesCanvas');
+    var ctx = canvas.getContext('2d');
+
+    ctx.save(); // 現在の描画状態を保存
+
+    // Y軸の目盛りの設定
+    var margin = 50; // Y軸の目盛りからキャンバス端までの距離
+    var step = 0.5; // 目盛りの間隔
+    var startValue = -10; // Y軸の最小値（例: -10）
+    var endValue = 10; // Y軸の最大値（例: 10）
+
+    ctx.strokeStyle = '#000'; // 目盛り線の色
+    ctx.lineWidth = 1; // 目盛り線の幅
+
+    for (var value = startValue; value <= endValue; value += step) {
+      var y = (canvas.height / 2) - value * zoomY; // zoomYを考慮してy位置を計算
+
+      // 目盛り線を描画
+      ctx.beginPath();
+      ctx.moveTo(margin, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+
+      // 目盛りのラベルを描画
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(value, margin - 10, y);
+    }
+
+    ctx.restore(); // 描画状態を復元
+  }
+
+
+  // 横軸（時間軸）の目盛りを描画する関数
+  function drawXLabels(timeWindow) {
+    var canvas = document.getElementById('timeSeriesCanvas');
+    var ctx = canvas.getContext('2d');
+    var currentTime = Date.now();
+
+    ctx.save(); // 現在の描画状態を保存
+
+    // 横軸の目盛り設定
+    var margin = 50; // X軸の目盛りからキャンバス端までの距離
+    var yZero = canvas.height / 2; // Y = 0 の位置
+    var step = 2000; // 2秒刻みの時間（ミリ秒）
+
+    ctx.strokeStyle = '#000'; // 目盛り線の色
+
+    // 左から右に向かって2秒刻みの目盛りを描画
+    for (var time = 0; time <= timeWindow; time += step) {
+        var x = canvas.width - (time / timeWindow) * canvas.width;
+
+        // 目盛り線を描画 (y = 0 の位置)
+
+        ctx.lineWidth = 0.5; // 目盛り線の幅
+        
+        ctx.beginPath();
+        ctx.moveTo(x, 0); 
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+        
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, yZero - 5); // 目盛りの高さを少し調整
+        ctx.lineTo(x, yZero + 5);
+        ctx.stroke();
+  
+
+        // 目盛りのラベルを描画
+        var timeLabel = -(time / 1000).toFixed(1) + 's'; // 時間（秒）
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(timeLabel, x - 20, yZero + 10);
+    }
+
+    ctx.restore(); // 描画状態を復元
+  }
+
+
+  // Yの目盛りを描画
+  drawYLabels(zoomY);
+
+
+  // Xの目盛りを描画 (2秒刻みで)
+  drawXLabels(timeWindow);
+
+  // 時間を横軸に、角度を縦軸に描画
+  function drawLine(dataArray, color, width, offset = 0) {
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    for (var i = 0; i < dataArray.length; i++) {
+      var timeDiff = currentTime - Degress_time[i];
+      var x = (timeDiff / timeWindow) * canvas.width;
+      var y = (canvas.height / 2) - (dataArray[i] + offset) * zoomY; // zoomYを縦軸の倍率に使用
+      if (i === 0) {
+        ctx.moveTo(canvas.width - x, y);
+      } else {
+        ctx.lineTo(canvas.width - x, y);
+      }
+    }
+    ctx.stroke();
+  }
+
+  // データの描画
+  drawLine(Degress_face_x, 'red', 2, -1.5);    // 顔のx方向角度
+  drawLine(Degress_face_y, 'blue', 2, -1.5);   // 顔のy方向角度
+  drawLine(Degress_eye_x, 'green', 3, 1.5);   // 視線のx方向角度
+  drawLine(Degress_eye_y, 'purple', 3, 1.5);  // 視線のy方向角度
+
+}
+
+
+
 
 let leftCanvas = document.getElementById("left-canvas")
 let rightCanvas = document.getElementById("right-canvas")
@@ -46,7 +284,7 @@ document.getElementById('file-input').addEventListener('change', function (event
 });
 
 
-
+// 左か右に指定したpageNoを表示
 function showPage(leftRight, pageNo) {
     if (!pdfDoc) {
         console.error('PDF is not loaded');
@@ -56,41 +294,62 @@ function showPage(leftRight, pageNo) {
     pdfDoc.getPage(pageNo).then(function (page) {
         console.log('Page loaded: ' + pageNo);
 
-        
-        var scale = parseInt(document.getElementById("page_scale").value) / 100.0 
-        scale *= resolutionMultiplier
-        var viewport = page.getViewport({ scale: scale });
+        // var scale = parseInt(document.getElementById("page_scale").value) / 100.0 
+        // scale *= resolutionMultiplier
+        // var viewport = page.getViewport({ scale: scale });
 
-        // var viewport = page.getViewport();
+        // // var viewport = page.getViewport();
 
-        // var canvas = document.getElementById(leftRight === 0 ? 'left-canvas' : 'right-canvas');
-        // var context = canvas.getContext('2d');
+        // // var canvas = document.getElementById(leftRight === 0 ? 'left-canvas' : 'right-canvas');
+        // // var context = canvas.getContext('2d');
 
-        // let canvas = [leftCanvas, rightCanvas][leftRight]
-        let context = [leftContext, rightContext][leftRight]
-        // canvas.height = viewport.height;
-        // canvas.width = viewport.width;
+        // // let canvas = [leftCanvas, rightCanvas][leftRight]
+        // let context = [leftContext, rightContext][leftRight]
+        // // canvas.height = viewport.height;
+        // // canvas.width = viewport.width;
 
-        var renderContext = {
-            canvasContext: context,
-            viewport: viewport
-        };
-        var renderTask = page.render(renderContext);
-        renderTask.promise.then(function () {
-            console.log('Page rendered: ' + pageNo);
-        });
+        // var renderContext = {
+        //     canvasContext: context,
+        //     viewport: viewport
+        // };
+        // var renderTask = page.render(renderContext);
+        // renderTask.promise.then(function () {
+        //     console.log('Page rendered: ' + pageNo);
+        // });
 
-        // if (leftRight === 0) {
-        //     currentPageLeft = pageNo;
-        //     document.getElementById('page-num-left').value = pageNo;
-        // } else {
-        //     currentPageRight = pageNo;
-        //     document.getElementById('page-num-right').value = pageNo;
-        // }
+        // // if (leftRight === 0) {
+        // //     currentPageLeft = pageNo;
+        // //     document.getElementById('page-num-left').value = pageNo;
+        // // } else {
+        // //     currentPageRight = pageNo;
+        // //     document.getElementById('page-num-right').value = pageNo;
+        // // }
+
+      var scale = 1.5;
+      var viewport = page.getViewport({ scale: scale, });
+      // Support HiDPI-screens.
+      var outputScale = window.devicePixelRatio || 1;
+
+      var canvas = document.getElementById('left-canvas');
+      var context = canvas.getContext('2d');
+
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = Math.floor(viewport.width) + "px";
+      // canvas.style.height = Math.floor(viewport.height) + "px";
+
+      var transform = outputScale !== 1
+        ? [outputScale, 0, 0, outputScale, 0, 0]
+        : null;
+
+      var renderContext = {
+        canvasContext: context,
+        transform: transform,
+        viewport: viewport
+      };
+      page.render(renderContext);
     });
 }
-
-
 
 
 
@@ -111,6 +370,10 @@ $(function(){
     prevPage()
   })
 
+  $("#first_page").on("click", function(){
+    firstPage()
+  })
+
   $("#page_scale").on("change", function(){
     showPage(0, currentPageLeft)
   })
@@ -124,9 +387,10 @@ $(function(){
 
 
 
-
 let canNextPage = false;
 
+
+// 次のページを表示する
 function nextPage(){
   if (! pdfDoc?.numPages ) return
 
@@ -137,6 +401,7 @@ function nextPage(){
   showPage(0, currentPageLeft); 
 }
 
+// 前のページを表示する
 function prevPage(){
   if (! pdfDoc?.numPages ) return
 
@@ -145,16 +410,38 @@ function prevPage(){
   showPage(0, currentPageLeft); 
 }
 
+// 最初のページを表示する
+function firstPage(){
+  if (! pdfDoc?.numPages ) return
+
+  currentPageLeft = 1;
+  showPage(0, currentPageLeft); 
+}
+
+
 function resetCanNextPage(){
   canNextPage = true;
 }
 
 
+function constrainValue(value, min, max) {
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
+}
 
+
+
+
+// MediaPipeのimport
 import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"
 const { FaceLandmarker, FilesetResolver, DrawingUtils } = vision
 
-
+// DrawingUtilsにOpenCVライクの描画関数を拡張
 class ExtendedDrawingUtils extends DrawingUtils {
   drawLine(start, end, { color = 'rgba(0, 0, 0, 1)', lineWidth = 1 } = {}) {
     this.ctx.beginPath()
@@ -173,7 +460,6 @@ class ExtendedDrawingUtils extends DrawingUtils {
   }
 }
 
-
 const demosSection = document.getElementById("demos")
 const videoBlendShapes = document.getElementById("video-blend-shapes")
 
@@ -181,7 +467,6 @@ let faceLandmarker
 let runningMode = "IMAGE"
 let enableWebcamButton
 let webcamRunning = false
-const videoWidth = 640
 
 async function createFaceLandmarker() {
   const filesetResolver = await FilesetResolver.forVisionTasks(
@@ -245,6 +530,8 @@ let lastVideoTime = -1
 let results = undefined
 const drawingUtils = new ExtendedDrawingUtils(canvasCtx)
 
+
+// ウェブカメラのフレームごとの処理
 async function predictWebcam() {
   // 動画のアスペクト比を計算
   const aspectRatio = video.videoWidth / video.videoHeight 
@@ -432,7 +719,7 @@ async function predictWebcam() {
       // 顔向きと画面の交差点の計算：
       const dist = distanceToCamera 
       // const pixel_cm = videoWidth / 10　// 端末のサイズ、カメラの焦点距離に応じて校正が必要
-      const pixel_cm = parseInt(document.getElementById("width_cm").value || 34) / 34 * 64;// 端末のサイズ、カメラの焦点距離に応じて校正が必要      
+      const pixel_cm = 34 / parseInt(document.getElementById("width_cm").value || 34) * 64;// 端末のサイズ、カメラの焦点距離に応じて校正が必要      
       
       const o_rx = -0.2 // 上下向きのオフセット
       const o_ry = 0
@@ -524,75 +811,154 @@ async function predictWebcam() {
       // 視線方向と画面の交差点の計算：
       const eye_o_rx = 0 // 視線の上下向きのオフセット
       const eye_o_ry = 0
-      const eye_r_rx = 1 // 視線の上下向きの敏感度
-      const eye_r_ry = 1 
-      const eye_d_eopy = dist * Math.tan((xDegrees + o_rx + gazeUpRad  ) * Math.PI / 180) * eye_r_rx * pixel_cm
-      const eye_d_eopx = dist * Math.tan((yDegrees + o_ry + gazeLeftRad) * Math.PI / 180) * eye_r_ry * pixel_cm
+      const eye_r_rx = parseFloat(document.getElementById("eye_r_rx").value || 1.5)  // 視線の上下向きの敏感度
+      const eye_r_ry = parseFloat(document.getElementById("eye_r_ry").value || 1.0)
+      const eye_d_eopy = dist * Math.tan((xDegrees + o_rx + eye_o_rx + gazeUpRad  ) * Math.PI / 180) * eye_r_rx * pixel_cm
+      const eye_d_eopx = dist * Math.tan((yDegrees + o_ry + eye_o_ry + gazeLeftRad) * Math.PI / 180) * eye_r_ry * pixel_cm
 
-      const pEyeScreenIntersect = [pointCenter[0] + eye_d_eopx, pointCenter[1] - eye_d_eopy]
+      pEyeScreenIntersect = [
+          pointCenter[0] + eye_d_eopx + EyeCalibVal[0]  ,
+          pointCenter[1] - eye_d_eopy + EyeCalibVal[1]
+        ]
       const pEyeNose = [pointCenter[0], pointCenter[1]]
 
       // 視線を描画
-      drawingUtils.drawLine(pEyeNose, pEyeScreenIntersect, { color: 'rgba(255, 0, 0, 0.5)', lineWidth: 3 })
+      // drawingUtils.drawLine(pEyeNose, pEyeScreenIntersect, { color: 'rgba(255, 0, 0, 0.5)', lineWidth: 3 })
+
+      // 交点に画面を横断する十字カーソルを描画
+      drawingUtils.drawLine([pEyeScreenIntersect[0], 0],  [pEyeScreenIntersect[0], imgH], { color: 'rgba(255, 0, 0, 0.5)', lineWidth: 3 })
+      drawingUtils.drawLine([0, pEyeScreenIntersect[1]], [imgW, pEyeScreenIntersect[1]], { color: 'rgba(255, 0, 0, 0.5)', lineWidth: 3 })
 
       // 視線の交点に円を描画
       const radiusEye = 80 * distanceToCamera / 500 // カメラまでの距離に応じて円のサイズを比例関係で調整。
-      drawingUtils.drawCircle(pEyeScreenIntersect, { color: 'rgba(255, 0, 0, 0.5)', radius: radiusEye })
+      // 交点を画面は範囲内に抑える処理
+
+      const viewPortRatio = window.innerWidth / window.innerHeight
+      const maxY = imgW / viewPortRatio
+
+      drawingUtils.drawCircle([constrainValue(pEyeScreenIntersect[0], 0, imgW), constrainValue(pEyeScreenIntersect[1], 0, maxY)], { color: 'rgba(255, 0, 0, 0.5)', radius: radiusEye })
 
 
-
+      // 時系列データに追加
+      AddToTimeSeries([ 
+          xDegrees + o_rx, 
+          yDegrees + o_ry,
+          xDegrees + o_rx + eye_o_rx + gazeUpRad,
+          yDegrees + o_ry + eye_o_ry + gazeLeftRad,
+        ])
       
+      // 時系列描画
+      drawTimeSeries(100);
 
-       
-      if(is_control_eye){
-        var point = pEyeScreenIntersect;
 
-      }else{
-        var point = pScreenIntersect;
-      }
+      // 時系列データの変化点検知とページ制御
+      // 　　次のページの検知
+      function detectNextPage_by_EyeDegPattern1( degress, maxDiff, minDiff ){
+        // 画面の横幅に応じて、閾値（maxDiff, minDiff）を調整する
+        // 開発当時は34cmに設定したので、 これを基準値、比例する
+        let widthRatio = parseInt($("#width_cm").val() || 34) / 34
 
-      let n = point[1] / 480
-      let m = point[0] / 640
+        maxDiff *= widthRatio
+        minDiff *= widthRatio
 
-      if(n > 1) n = 1
-      if(n < 0) n = 0
-      if(m > 1) m = 1
-      if(m < 0) m = 0
-  
-      
 
-      if (n > 0.5 && m < 0.4){
-      // if ( m < 0.44 ){
-        if(! canNextPage){
-          console.log("n, m: ", n.toFixed(2), ", ",  m.toFixed(2), ", ", ! canNextPage)
+        let now_time = Date.now()
+        let target_i
+        const windowLen = 1000
+        for(let i = Degress_time.length; i >= 0; i--){
+          if((now_time - Degress_time[i]) >= windowLen){
+            target_i = i;
+            break
+          }
         }
-        canNextPage = true;
-        // console.log("true", n, ", ",  m)
+        if(target_i){
+          let arr1 = [];
+          let arr2 = [];
+          
+          for(let j = target_i; j < Degress_time.length; j++ ){
+            if(Degress_time[j] < now_time - windowLen/4 ){
+              arr1.push(degress[j])
+            }else{
+              arr2.push(degress[j])
+            }
+          }
+          // let avg_sum1 = averageArray(arr1);
+          // let avg_sum2 = averageArray(arr2);
+          
+          let median1 = medianArray(arr1);
+          let median2 = medianArray(arr2);
+
+          // console.log("target_i=", target_i, avg_sum1, avg_sum2, sum1, sum2, n1, n2)
+          let diff = median2 - median1 
+          if( diff < maxDiff  && diff > minDiff){
+            return true
+          }
+        }
+        return false
       }
 
-      if (n < 0.4 && m > 0.6){
-      // if ( m > 0.56 ){
-        if(canNextPage){
-          nextPage();
-          canNextPage = false;
+      if( $("#next_page_control").val() == '1' ){
+        // 時系列データの変化点検知とページ制御
+        if(  detectNextPage_by_EyeDegPattern1(is_control_eye ? Degress_eye_x : Degress_face_x , 1.0, 0.18) 
+          && detectNextPage_by_EyeDegPattern1(is_control_eye ? Degress_eye_y : Degress_face_y,  1.0, 0.13) 
+        ){
+            let now_time = Date.now()
+            if( now_time - LastAutoNextPageCallTime > 1000 ){
+              nextPage()
+              LastAutoNextPageCallTime = now_time
+            }
+        }
 
-        //  if(tid){
-        //     clearTimeout(tid)
-        //   } 
-          // var tid = setTimeout(resetCanNextPage, 15000);
+      } else if( $("#next_page_control").val() == '0' ){
+        // 指定位置への視線情報の変化条件でページ制御
+        // 視線や顔向きの選択
+        if(is_control_eye){
+          var point = pEyeScreenIntersect;
+        }else{
+          var point = pScreenIntersect;
+        }
 
-          // console.log("false" , n, ", ",  m)
-          console.log("n, m: ", n.toFixed(2), ", ",  m.toFixed(2), ", ", canNextPage)
+        let n = point[1] / 480
+        let m = point[0] / 640
+
+        if(n > 1) n = 1
+        if(n < 0) n = 0
+        if(m > 1) m = 1
+        if(m < 0) m = 0
+
+        
+        if (n > 0.5 && m < 0.4){
+        // if ( m < 0.44 ){
+          if(! canNextPage){
+            console.log("n, m: ", n.toFixed(2), ", ",  m.toFixed(2), ", ", ! canNextPage)
+          }
+          canNextPage = true;
+          // console.log("true", n, ", ",  m)
+        }
+
+        if (n < 0.4 && m > 0.6){
+        // if ( m > 0.56 ){
+          if(canNextPage){
+            nextPage();
+            canNextPage = false;
+
+          //  if(tid){
+          //     clearTimeout(tid)
+          //   } 
+            // var tid = setTimeout(resetCanNextPage, 15000);
+
+            // console.log("false" , n, ", ",  m)
+            // console.log("n, m: ", n.toFixed(2), ", ",  m.toFixed(2), ", ", canNextPage)
+          }
         }
       }
-
 
 
       
 
       const drawInfoElement = document.getElementById('draw_info')
       drawInfoElement.innerHTML = `
-        画像サイズ: ${imgW} x ${imgH}<br>
+        表示画素サイズ[px]: ${imgW} x ${imgH}<br>
         最小Z値: ${minZ.toFixed(3)}<br>
         左右目のLandmark: <br>
         　　${leftEye.x.toFixed(3)},${leftEye.y.toFixed(3)},${leftEye.z.toFixed(3)}<br>
