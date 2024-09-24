@@ -830,8 +830,9 @@ async function predictWebcam() {
       drawingUtils.drawLine([0, pEyeScreenIntersect[1]], [imgW, pEyeScreenIntersect[1]], { color: 'rgba(255, 0, 0, 0.5)', lineWidth: 3 })
 
       // 視線の交点に円を描画
-      const radiusEye = 80 * distanceToCamera / 500 // カメラまでの距離に応じて円のサイズを比例関係で調整。
-      // 交点を画面は範囲内に抑える処理
+      const devWidth = $("#width_cm").val() || 34
+
+      const radiusEye = 80 * distanceToCamera / 500 * ( 34 / devWidth ) // カメラまでの距離に応じて円のサイズを比例関係で調整、デバイス幅と反比例      // 交点を画面は範囲内に抑える処理
 
       const viewPortRatio = window.innerWidth / window.innerHeight
       const maxY = imgW / viewPortRatio
