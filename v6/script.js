@@ -839,6 +839,27 @@ async function predictWebcam() {
       drawingUtils.drawCircle([constrainValue(pEyeScreenIntersect[0], 0, imgW), constrainValue(pEyeScreenIntersect[1], 0, maxY)], { color: 'rgba(255, 0, 0, 0.5)', radius: radiusEye })
 
 
+      // 😉片目を閉じてページを制御　(左目を閉じると、前のページ、右目は次のページ )
+      const right目蓋距離 = getDistOf2LM(fl[159], fl[145])
+      const left目蓋距離 = getDistOf2LM(fl[386], fl[374])
+
+      if(right目蓋距離 / left目蓋距離 > 1.9){
+        if(Date.now() - LastAutoNextPageCallTime > 1000){
+          prevPage()
+          LastAutoNextPageCallTime = Date.now()
+        }
+      }
+
+      if(left目蓋距離 / right目蓋距離 > 1.9){
+        if(Date.now() - LastAutoNextPageCallTime > 1000){
+          nextPage()
+          LastAutoNextPageCallTime = Date.now()
+        }
+      }
+      
+      // console.log("right目蓋距離=","left目蓋距離=", right目蓋距離.toFixed(2), left目蓋距離.toFixed(2))
+
+
       // 時系列データに追加
       AddToTimeSeries([ 
           xDegrees + o_rx, 
