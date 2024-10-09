@@ -66,10 +66,17 @@ limitations under the License. -->
     <button id="next_page">次のページ</button>
     <button id="control_face_eye">視線制御</button>
 
-    <label for="pet-next_page_control">次ページ制御：</label>
+    <label for="next_page_control">ページ自動制御：</label>
     <select id="next_page_control">
+      <option value="-1">自動制御無効化</option>
       <option value="0">位置：画面の右下から左上</option>
       <option value="1" selected>角度：右下から左上の動きパターン</option>
+    </select>
+    
+    <label for="next_page_manaual_control">ページ手動制御：</label>
+    <select id="next_page_manaual_control">
+      <option value="-1">無効化</option>
+      <option value="0" selected>ウィンクで</option>
     </select>
 
 

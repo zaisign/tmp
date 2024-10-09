@@ -16,6 +16,11 @@ var Degress_face_y = []
 var Degress_eye_x = []
 var Degress_eye_y = []
 
+
+// MediaPipeのBlendshapesのlookUp/Downの平均合計値の時系列リスト（	• eyeLookDownLeft　• eyeLookDownRight　• eyeLookUpLeft　•eyeLookUpRight）
+var Blendes_LookUp = []
+
+
 // 時系列の横軸のデータ
 var Degress_time = []
 
@@ -97,6 +102,7 @@ function AddToTimeSeries(dat){
   Degress_face_y.push(dat[1])
   Degress_eye_x.push(dat[2])
   Degress_eye_y.push(dat[3])
+  Blendes_LookUp.push(dat[4])
   
   // Get current time in milliseconds
   var time = Date.now();
@@ -109,6 +115,7 @@ function AddToTimeSeries(dat){
     Degress_face_y.shift()
     Degress_eye_x.shift()
     Degress_eye_y.shift()
+    Blendes_LookUp.shift()
   }
 }
 
@@ -240,6 +247,7 @@ function drawTimeSeries(zoomY) {
   drawLine(Degress_face_y, 'blue', 2, -1.5);   // 顔のy方向角度
   drawLine(Degress_eye_x, 'green', 3, 1.5);   // 視線のx方向角度
   drawLine(Degress_eye_y, 'purple', 3, 1.5);  // 視線のy方向角度
+  drawLine(Blendes_LookUp, 'cyan', 3, 0);  // 視線のy方向角度
 
 }
 
@@ -832,7 +840,8 @@ async function predictWebcam() {
       // 視線の交点に円を描画
       const devWidth = $("#width_cm").val() || 34
 
-      const radiusEye = 80 * distanceToCamera / 500 * ( 34 / devWidth ) // カメラまでの距離に応じて円のサイズを比例関係で調整、デバイス幅と反比例      // 交点を画面は範囲内に抑える処理
+      const radiusEye = 80 * distanceToCamera / 500 * ( 34 / devWidth ) // カメラまでの距離に応じて円のサイズを比例関係で調整、デバイス幅と反比例
+      // 交点を画面は範囲内に抑える処理
 
       const viewPortRatio = window.innerWidth / window.innerHeight
       const maxY = imgW / viewPortRatio
@@ -840,26 +849,34 @@ async function predictWebcam() {
       drawingUtils.drawCircle([constrainValue(pEyeScreenIntersect[0], 0, imgW), constrainValue(pEyeScreenIntersect[1], 0, maxY)], { color: 'rgba(255, 0, 0, 0.5)', radius: radiusEye })
 
 
-      // 😉片目を閉じてページを制御　(左目を閉じると、前のページ、右目は次のページ )
-      const right目蓋距離 = getDistOf2LM(fl[159], fl[145])
-      const left目蓋距離 = getDistOf2LM(fl[386], fl[374])
-
-      if(right目蓋距離 / left目蓋距離 > 1.9){
-        if(Date.now() - LastAutoNextPageCallTime > 1000){
-          prevPage()
-          LastAutoNextPageCallTime = Date.now()
+      // 😉片目を閉じてページを制御　（ウィンク）(左目を閉じると、前のページ、右目は次のページ )
+      if( $("#next_page_manaual_control").val() == '0' ){
+        const right目蓋距離 = getDistOf2LM(fl[159], fl[145])
+        const left目蓋距離 = getDistOf2LM(fl[386], fl[374])
+  
+        if(right目蓋距離 / left目蓋距離 > 1.9){
+          if(Date.now() - LastAutoNextPageCallTime > 1000){
+            prevPage()
+            LastAutoNextPageCallTime = Date.now()
+          }
         }
-      }
-
-      if(left目蓋距離 / right目蓋距離 > 1.9){
-        if(Date.now() - LastAutoNextPageCallTime > 1000){
-          nextPage()
-          LastAutoNextPageCallTime = Date.now()
+  
+        if(left目蓋距離 / right目蓋距離 > 1.9){
+          if(Date.now() - LastAutoNextPageCallTime > 1000){
+            nextPage()
+            LastAutoNextPageCallTime = Date.now()
+          }
         }
       }
       
       // console.log("right目蓋距離=","left目蓋距離=", right目蓋距離.toFixed(2), left目蓋距離.toFixed(2))
 
+      let blendShapesScore = getBlendshapesScoreAsDict(results.faceBlendshapes)
+
+      // eyeLookDownLeft
+      // eyeLookDownRight
+      // eyeLookUpLeft
+      // eyeLookUpRight
 
       // 時系列データに追加
       AddToTimeSeries([ 
@@ -867,6 +884,9 @@ async function predictWebcam() {
           yDegrees + o_ry,
           xDegrees + o_rx + eye_o_rx + gazeUpRad,
           yDegrees + o_ry + eye_o_ry + gazeLeftRad,
+
+          (blendShapesScore.eyeLookUpLeft + blendShapesScore.eyeLookUpRight)/2 
+          - (blendShapesScore.eyeLookDownLeft + blendShapesScore.eyeLookDownRight)/2 
         ])
       
       // 時系列描画
@@ -1054,10 +1074,25 @@ async function predictWebcam() {
   }
   drawBlendShapes(videoBlendShapes, results.faceBlendshapes)
 
+
   if (webcamRunning === true) {
     window.requestAnimationFrame(predictWebcam) // 次のフレームで再度実行
   }
 }
+
+
+function getBlendshapesScoreAsDict(blendShapes){
+  // MediaPipeのblendShapesのリストを、categoryNameをキーに、scoreを値に、オブジェクトとして取得する
+
+  let result = {}
+  
+  blendShapes[0].categories.map((shape) => {
+    result[shape.displayName || shape.categoryName] = shape.score
+  })
+
+  return result
+}
+
 
 function drawBlendShapes(el, blendShapes) {
   if (!blendShapes.length) {
